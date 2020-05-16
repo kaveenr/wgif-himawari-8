@@ -1,0 +1,70 @@
+#!/bin/bash
+# Author Kaveen Rodrigo
+# Dependecies ImageMagick % Xidel
+
+band="snd"
+frames="10"
+outFile="wgif.gif"
+
+baseUrl="http://www.data.jma.go.jp/mscweb/data/himawari/"
+
+function splitByNewLine {
+	SAVEIFS=$IFS
+	IFS=$'\n'
+	SPLIT_OUT=($1)
+	IFS=$SAVEIFS
+}
+function displaySplitGroups {
+	for (( i=0; i<${#SPLIT_OUT[@]} ; i+=4 )) ; do
+		printf "\t%-5s%-30s%-5s%-30s\n" "${SPLIT_OUT[i+1]}" "${SPLIT_OUT[i]}" "${SPLIT_OUT[i+3]}" "${SPLIT_OUT[i+2]}"
+	done
+}
+function displayHelp {
+	echo "wgif <area> <band=$band> <frames=$frames> <fileName=$outFile>"
+	echo "Avaiable Area Codes"
+	splitByNewLine "$(xidel -s "$baseUrl/sat_img.php" -e "/html/body/div[1]/div[2]/div[2]/article/form/div[1]/select/option/(@value|.)")"
+	displaySplitGroups
+	echo "Avaiable Bands"
+	splitByNewLine "$(xidel -s "$baseUrl/sat_img.php" -e "/html/body/div[1]/div[2]/div[2]/article/form/div[2]/select/option/(@value|.)")"
+	displaySplitGroups
+}
+
+if [[ -z "$1" ]]; then
+        echo "Input Error: Area not specified"
+        displayHelp
+        exit 1
+fi
+targetArea="$1"
+
+imageDir="./.wgif_`date +%s`/"
+function cleanup {      
+  rm -rf "$imageDir"
+  echo "Deleted temp working directory $imageDir"
+}
+trap cleanup EXIT
+
+if [[ -n "$2" ]]; then 
+	band="$2"
+fi
+
+if [[ -n "$3" ]]; then 
+	frames="$3"
+fi
+
+if [[ -n "$4" ]]; then 
+	outFile="$4"
+fi
+
+areaUrl="$baseUrl/sat_img.php?area=$targetArea"
+timePath="//html/body/div[1]/div[2]/div[2]/article/form/div[3]/select/option/@value"
+
+mkdir $imageDir
+xidel -s "$areaUrl" -e "$timePath" | head -n $frames | while read timestamp; do
+	imageFileName="${targetArea}_${band}_$timestamp.jpg"
+	imageUrl="${baseUrl}img/$targetArea/$imageFileName";
+	echo "Getting frame $timestamp"
+	(cd $imageDir && curl -s -O $imageUrl)
+done
+
+magick convert -delay 80 $imageDir/*.jpg $outFile
+echo "Sucess! Created gif $outFile"
